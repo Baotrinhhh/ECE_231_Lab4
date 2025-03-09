@@ -3,79 +3,93 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/epoll.h>
 #include "pin_config_lib.h"
 
-void* threadFunction(void *var)
+// Global buffer to store 5 timestamp values
+time_t timestamps[5];
 
-int main(){
-    // configure pin P8_8 as input with internal pull-up enabled
-    // and enable interrupt for rising edge
-    char buffer[5];
-    int buffer_size =5;
+void* threadFunction(void *var);
+
+int main() {
     char gpio_pin_number[32] = "P8_09";
     int gpio_number = 69;
+
+    // Configure GPIO input and interrupt on rising edge
     configure_interrupt(gpio_number, gpio_pin_number);
 
-    // the following code can be used to receive interrupts on the registered pin
+    // Build the file path for the GPIO value file
     char InterruptPath[40];
     sprintf(InterruptPath, "/sys/class/gpio/gpio%d/value", gpio_number);
 
     pthread_t thread_id;
-    // Create the thread to handle GPIO interrupt
+
+    // Create a thread to handle GPIO interrupts
     if (pthread_create(&thread_id, NULL, threadFunction, (void*)InterruptPath) != 0) {
         perror("Failed to create thread");
         return 1;
     }
 
-    pthread_join(thread_id, NULL);
+    // Wait for the thread to finish
+    if (pthread_join(thread_id, NULL) != 0) {
+        perror("Failed to join thread");
+        return 1;
+    }
 
-    printf("Received data=%d inside main from thread\n", data);
-    
-    // release the thread once finisihed
-    pthread_exit(0)
- 
+    // Print the collected timestamps from the global buffer
+    printf("Timestamps captured:\n");
+    for (int i = 0; i < 5; i++) {
+         printf("%ld\n", timestamps[i]);
+    }
 
     return 0;
 }
 
-void* threadFunction(void *var){
-    int epfd;
-    struct epoll_event ev;
-
-    // (STEP 1) open the interrupt file
-    // file pointer (C abstraction to manipulate files)
+void* threadFunction(void *var) {
     char* input = (char*) var;
-    FILE* fp = fopen(*input, "r");
-
-    // file descriptor (Unix Linux file identifier used by system calls)
+    FILE* fp = fopen(input, "r");
+    if (fp == NULL) {
+        perror("Failed to open interrupt file");
+        pthread_exit(NULL);
+    }
     int fd = fileno(fp);
 
-    // (STEP 2) create epoll instance to monitor I/O events on interrupt file
-    epfd = epoll_create(1);
+    int epfd = epoll_create(1);
+    if (epfd == -1) {
+        perror("Failed to create epoll instance");
+        fclose(fp);
+        pthread_exit(NULL);
+    }
 
-    // (STEP 3) register events that will be monitored
-    // detects whenever a new data is available for read (EPOLLIN)
-    // signals the read events when the available read value has changed (EPOLLET)
+    struct epoll_event ev;
     ev.events = EPOLLIN | EPOLLET;
-    // (STEP 4) register interrupt file with epoll interface for monitoring
     ev.data.fd = fd;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+        perror("Failed to add file descriptor to epoll");
+        close(epfd);
+        fclose(fp);
+        pthread_exit(NULL);
+    }
 
-    int capture_interrupt;
     struct epoll_event ev_wait;
     struct timespec tm;
+    for (int i = 0; i < 5; i++) {
+         int ret = epoll_wait(epfd, &ev_wait, 1, -1);
+         if (ret < 0) {
+              perror("epoll_wait failed");
+              close(epfd);
+              fclose(fp);
+              pthread_exit(NULL);
+         }
+         // Capture the current timestamp (only seconds part)
+         clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
+         timestamps[i] = tm.tv_sec;
 
-    for(int i=0; i < 5; i++){ // Capture interrupt ten times
-    // (STEP 5) wait for epoll interface to signal the change
-    capture_interrupt = epoll_wait(epfd, &ev_wait, 1, -1);
-    clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
-    printf("Interrupt received: %d at %ld\n", capture_interrupt, tm.tv_sec);
+         // Optionally reset file pointer if required to clear the interrupt:
+         // fseek(fp, 0, SEEK_SET);
     }
 
-    // (STEP 6) close the epoll interface
     close(epfd);
-    // pause the program for 1 second
-    sleep(1);
-    printf("Received data=%d inside thread from main\n", *input);
-    return NULL;
-    }
+    fclose(fp);
+    pthread_exit(NULL);
+}
