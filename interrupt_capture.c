@@ -7,43 +7,8 @@
 #include "pin_config_lib.h"
 
 // Global buffer to store 5 timestamp values
-int buffer[5];
-
-void* threadFunction(void *var);
-
-int main() {
-    char gpio_pin_number[32] = "P8_09";
-    int gpio_number = 69;
-
-    // Configure GPIO input and interrupt on rising edge
-    configure_interrupt(gpio_number, gpio_pin_number);
-
-    // Build the file path for the GPIO value file
-    char InterruptPath[40];
-    sprintf(InterruptPath, "/sys/class/gpio/gpio%d/value", gpio_number);
-
-    pthread_t thread_id;
-
-    // Create a thread to handle GPIO interrupts
-    if (pthread_create(&thread_id, NULL, threadFunction, (void*)InterruptPath) != 0) {
-        perror("Failed to create thread");
-        return 1;
-    }
-
-    // Wait for the thread to finish
-    if (pthread_join(thread_id, NULL) != 0) {
-        perror("Failed to join thread");
-        return 1;
-    }
-
-    // Print the collected timestamps from the global buffer
-    printf("Timestamps captured:\n");
-    for (int i = 0; i < 5; i++) {
-         printf("%ld\n", timestamps[i]);
-    }
-
-    return 0;
-}
+long buffer[5];
+long buffernsec[5];
 
 void* threadFunction(void *var) {
     char* input = (char*) var;
@@ -73,9 +38,11 @@ void* threadFunction(void *var) {
 
     struct epoll_event ev_wait;
     struct timespec tm;
-    for (int i = 0; i < 5; i++) {
-         int ret = epoll_wait(epfd, &ev_wait, 1, -1);
-         if (ret < 0) {
+    int cnt = 0;
+    
+    while (cnt <5) {
+        int ret = epoll_wait(epfd, &ev_wait, 1, -1);
+         if (cnt < 0) {
               perror("epoll_wait failed");
               close(epfd);
               fclose(fp);
@@ -83,7 +50,9 @@ void* threadFunction(void *var) {
          }
          // Capture the current timestamp (only seconds part)
          clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
-         buffer[i] = tm.tv_sec;
+         buffer[cnt] = tm.tv_sec;
+         buffernsec[cnt] = tm.tv_nsec;
+         cnt += ret;
 
          // Optionally reset file pointer if required to clear the interrupt:
          // fseek(fp, 0, SEEK_SET);
@@ -93,3 +62,38 @@ void* threadFunction(void *var) {
     fclose(fp);
     pthread_exit(NULL);
 }
+
+int main() {
+    char gpio_pin_number[32] = "P8_09";
+    int gpio_number = 69;
+
+    // Configure GPIO input and interrupt on rising edge
+    configure_interrupt(gpio_number, gpio_pin_number);
+
+    // Build the file path for the GPIO value file
+    char InterruptPath[40];
+    sprintf(InterruptPath, "/sys/class/gpio/gpio%d/value", gpio_number);
+
+    pthread_t thread_id;
+
+    // Create a thread to handle GPIO interrupts
+    if (pthread_create(&thread_id, NULL, threadFunction, (void*)InterruptPath) != 0) {
+        perror("Failed to create thread");
+        return 1;
+    }
+
+    // Wait for the thread to finish
+    if (pthread_join(thread_id, NULL) != 0) {
+        perror("Failed to join thread");
+        return 1;
+    }
+
+    // Print the collected timestamps from the global buffer
+    printf("Timestamps captured:\n");
+    for (int i = 0; i < 5; i++) {
+         printf("%ld sec, %ld nsec\n", buffer[i], buffernsec[i]);
+    }
+
+    return 0;
+}
+
