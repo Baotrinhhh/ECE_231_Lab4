@@ -7,7 +7,7 @@
 #include "pin_config_lib.h"
 
 // Global buffer to store 5 timestamp values
-time_t timestamps[5];
+int buffer[5];
 
 void* threadFunction(void *var);
 
@@ -83,7 +83,7 @@ void* threadFunction(void *var) {
          }
          // Capture the current timestamp (only seconds part)
          clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
-         timestamps[i] = tm.tv_sec;
+         buffer[i] = tm.tv_sec;
 
          // Optionally reset file pointer if required to clear the interrupt:
          // fseek(fp, 0, SEEK_SET);
