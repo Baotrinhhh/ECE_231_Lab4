@@ -8,7 +8,6 @@
 
 // Global buffer to store 5 timestamp values
 long buffer[5];
-long buffernsec[5];
 
 void* threadFunction(void *var) {
     char* input = (char*) var;
@@ -39,7 +38,8 @@ void* threadFunction(void *var) {
     struct epoll_event ev_wait;
     struct timespec tm;
     int cnt = 0;
-    
+    sleep(1);
+
     while (cnt <5) {
         int ret = epoll_wait(epfd, &ev_wait, 1, -1);
          if (cnt < 0) {
@@ -51,7 +51,6 @@ void* threadFunction(void *var) {
          // Capture the current timestamp (only seconds part)
          clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
          buffer[cnt] = tm.tv_sec;
-         buffernsec[cnt] = tm.tv_nsec;
          cnt += ret;
 
          // Optionally reset file pointer if required to clear the interrupt:
@@ -91,7 +90,7 @@ int main() {
     // Print the collected timestamps from the global buffer
     printf("Timestamps captured:\n");
     for (int i = 0; i < 5; i++) {
-         printf("%ld sec, %ld nsec\n", buffer[i], buffernsec[i]);
+         printf("%ld sec\n", buffer[i]);
     }
 
     return 0;
