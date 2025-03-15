@@ -42,7 +42,7 @@ void* threadFunction(void *var) {
 
     while (cnt <5) {
         int ret = epoll_wait(epfd, &ev_wait, 1, -1);
-         if (cnt < 0) {
+         if (ret < 0) {
               perror("epoll_wait failed");
               close(epfd);
               fclose(fp);
