@@ -44,10 +44,9 @@ void* threadFunction(void *var) {
         int ret = epoll_wait(epfd, &ev_wait, 1, -1);
          if (ret < 0) {
               perror("epoll_wait failed");
-              close(epfd);
-              fclose(fp);
-              pthread_exit(NULL);
+             continue;
          }
+        if (ret > 0){
          // Capture the current timestamp (only seconds part)
          clock_gettime(CLOCK_MONOTONIC_RAW, &tm);
          buffer[cnt] = tm.tv_sec;
@@ -55,6 +54,7 @@ void* threadFunction(void *var) {
 
          // Optionally reset file pointer if required to clear the interrupt:
          // fseek(fp, 0, SEEK_SET);
+        }
     }
 
     close(epfd);
